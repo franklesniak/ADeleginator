@@ -173,7 +173,7 @@ The tool uses a hardcoded list of delegation detail patterns considered insecure
 The tool checks whether the ADeleg executable exists at the resolved path. In the current implementation (v0.1), the `PathToADeleg` parameter is unconditionally overwritten with `.\ADeleg.exe` before this check (see the **PathToADeleg parameter override** limitation), so validation always targets the current working directory regardless of any user-specified path. Validation is performed by testing for the file's existence.
 
 - **If found:** Execution continues.
-- **If not found:** The tool displays a warning message instructing the user to download ADeleg from [https://github.com/mtth-bfft/adeleg/releases](https://github.com/mtth-bfft/adeleg/releases) and place it in the same folder, then **halts execution**. (In the current implementation, the halt is performed using a `break` statement outside of any loop or switch, which may cause a runtime error rather than a clean exit in some execution contexts. A correct re-implementation should exit gracefully.)
+- **If not found:** The tool displays a warning message instructing the user to download ADeleg from [https://github.com/mtth-bfft/adeleg/releases](https://github.com/mtth-bfft/adeleg/releases) and place it in the same folder, then **halts execution**. (In the current implementation, the halt is performed using a `break` statement outside of any loop or switch, which will cause a runtime error rather than a clean exit. A correct re-implementation should exit gracefully.)
 
 ### Step 6: Invoke ADeleg
 
