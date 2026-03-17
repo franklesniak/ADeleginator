@@ -121,9 +121,9 @@ The tool begins with a **baseline set of broadly-scoped, well-known trustees**:
 | 2 | `Authenticated Users` |
 | 3 | `Everyone` |
 
-It then evaluates the current user's group memberships (from Step 1). If the group memberships do **not** match any entry in the Tier 0 resources list (see Step 3), the current user's group names are appended to the unsafe trustees list.
+It then evaluates the current user's group memberships (from Step 1) against the Tier 0 resources list (see Step 3). The check filters the array of group names and returns only those that do **not** match any Tier 0 resource. If the filtered result is non-empty — meaning the user belongs to **at least one** non-Tier-0 group — then the **entire** original list of the user's groups is appended to the unsafe trustees list. This means that even Tier 0 group names the user belongs to will be included in the unsafe trustees list if the user also belongs to any non-Tier-0 group. Only if **every** group the user belongs to is a Tier 0 resource will the append be skipped entirely.
 
-This dynamic expansion ensures that any non-Tier-0 group the operator belongs to is treated as a potentially unsafe trustee — reflecting the principle that delegations to those groups are accessible to the current user and may represent excessive permissions.
+> **Note:** This all-or-nothing behavior is a known quirk of the current implementation (v0.1). A correct re-implementation may want to append only the non-Tier-0 groups individually, rather than appending all groups unconditionally.
 
 ### Step 3: Define Tier 0 (Critical) Resources
 
@@ -171,7 +171,7 @@ The tool uses a hardcoded list of delegation detail patterns considered insecure
 The tool checks whether the ADeleg executable exists at the resolved path (default: `.\ADeleg.exe` or the user-specified path). Validation is performed by testing for the file's existence.
 
 - **If found:** Execution continues.
-- **If not found:** The tool displays a warning message instructing the user to download ADeleg from [https://github.com/mtth-bfft/adeleg/releases](https://github.com/mtth-bfft/adeleg/releases) and place it in the same folder, then **halts execution**.
+- **If not found:** The tool displays a warning message instructing the user to download ADeleg from [https://github.com/mtth-bfft/adeleg/releases](https://github.com/mtth-bfft/adeleg/releases) and place it in the same folder, then **halts execution**. (In the current implementation, the halt is performed using a `break` statement outside of any loop or switch, which may cause a runtime error rather than a clean exit in some execution contexts. A correct re-implementation should exit gracefully.)
 
 ### Step 6: Invoke ADeleg
 
@@ -304,8 +304,8 @@ matches any field value that **contains** any of the listed substrings. Because 
 |---|---|
 | **Case sensitivity** | Matching is **case-insensitive**. |
 | **Match type** | **Substring/contains** — the pattern need only appear somewhere within the field value, not match the entire value. |
-| **Alternation** | Multiple patterns are combined with `\|` (pipe), meaning any one match is sufficient. |
-| **Special characters** | Patterns such as `add/delete delegations` contain the `/` character and `Domain Controllers (OU)` contains parentheses. These are used literally in the current implementation, though in a strict regex context parentheses are metacharacters (denoting capture groups). The current behavior relies on the regex engine treating these as acceptable in practice. A correct re-implementation should either escape regex metacharacters in the pattern (e.g., `Domain Controllers \(OU\)`) or use literal/fixed-string matching for entries that contain special characters. |
+| **Alternation** | Multiple patterns are combined with `|` (pipe), which is the regex alternation operator, meaning any one alternative matching is sufficient. |
+| **Special characters** | Patterns such as `add/delete delegations` contain the `/` character and `Domain Controllers (OU)` contains parentheses. In the .NET regex engine (used by PowerShell), unescaped parentheses `(` and `)` create **capture groups** rather than matching literal parentheses. This means a pattern like `Domain Controllers (OU)` is interpreted as `Domain Controllers ` followed by a capture group containing `OU` — which effectively still matches the string `Domain Controllers OU` (without parentheses) and also `Domain Controllers (OU)` (since the captured group matches `OU` within). However, this is fragile and may produce unexpected results on other regex engines. A correct re-implementation targeting .NET should escape regex metacharacters in patterns (e.g., `Domain Controllers \(OU\)` and `Users \(container\)`) to ensure literal parentheses are matched. Implementations targeting other platforms should apply the equivalent escaping for their regex engine. |
 
 ### Insecure Trustee Delegation Rules
 
@@ -377,12 +377,12 @@ Upon launch, the tool displays an ASCII art banner featuring the tool name, auth
 | **Hardcoded unsafe delegation types** | The set of delegation patterns considered insecure is hardcoded. Emerging or organization-specific dangerous permission types are not detected unless the source is modified. |
 | **Hardcoded baseline unsafe trustees** | The three baseline unsafe trustees (`Domain Users`, `Authenticated Users`, `Everyone`) are hardcoded. Additional broad groups specific to an environment must be added manually. |
 | **Regex pattern matching nuances** | Because filtering uses regex substring matching rather than exact string comparison, there is a possibility of false positives. For example, the pattern `delete` will also match `delete child objects` and any other string containing the word "delete". Similarly, `Administrator` will match `Administrators`. |
-| **Unescaped regex metacharacters** | Some patterns contain regex metacharacters (e.g., parentheses in `Domain Controllers (OU)` and `Users (container)`). While these may work in practice depending on the regex engine, they could cause unexpected behavior in strict regex implementations. |
+| **Unescaped regex metacharacters** | Some patterns contain regex metacharacters (e.g., parentheses in `Domain Controllers (OU)` and `Users (container)`). In .NET's regex engine, unescaped parentheses create capture groups rather than matching literal characters. While the current patterns happen to still match the intended strings in most cases, this is fragile. A re-implementation targeting .NET should escape these characters (e.g., `\(` and `\)`); implementations targeting other platforms should apply equivalent escaping for their regex engine. |
 | **Single output format** | The tool only produces CSV output. There is no built-in support for JSON, HTML, or other report formats. |
 | **Silent error suppression during ADeleg execution** | If ADeleg fails to execute or encounters an error, the error is silently suppressed. The user may not be informed if the raw report was not generated or is incomplete. |
 | **No validation of ADeleg CSV schema** | The tool does not validate that the CSV produced by ADeleg contains the expected column headers. If ADeleg's output format changes, the tool may fail or produce incorrect results without a clear error message. |
 | **PathToADeleg parameter override** | In the current implementation (v0.1), the `PathToADeleg` parameter is accepted but then unconditionally overwritten with the default value (`.\ADeleg.exe`), effectively making the parameter non-functional. This is a known defect in the current version. |
-| **Group membership evaluation** | The current user's groups are evaluated as a single combined value against the Tier 0 resources pattern. If **any** group name matches a Tier 0 resource, **none** of the user's groups are added to the unsafe trustees list. This all-or-nothing behavior may not be the intended design in all cases. |
+| **Group membership evaluation** | The current user's group names are checked against the Tier 0 resources pattern using an array filter. The filter returns only the non-matching (non-Tier-0) groups. If **at least one** non-Tier-0 group exists, the condition evaluates to true and the tool appends **all** of the user's groups (including any Tier 0 groups) to the unsafe trustees list. Only if **every** group the user belongs to is a Tier 0 resource will none be appended. A correct re-implementation should append only the non-Tier-0 groups individually. |
 
 ### Assumptions
 
