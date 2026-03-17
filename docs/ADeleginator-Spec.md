@@ -47,7 +47,7 @@ Active Directory environments commonly accumulate delegation entries (Access Con
 
 ### Relationship to ADeleg
 
-ADeleginator is a **wrapper and companion tool** for [ADeleg](https://github.com/mtth-bfft/adeleg/). It does not perform any Active Directory enumeration itself. Instead, it:
+ADeleginator is a **wrapper and companion tool** for [ADeleg](https://github.com/mtth-bfft/adeleg/). It does not perform any Active Directory delegation enumeration itself. However, it does make a small ADSI/LDAP query to resolve the current user's group memberships (via the `memberOf` attribute). Beyond that query, it:
 
 1. **Orchestrates** ADeleg by invoking it with appropriate arguments to produce a CSV delegation report.
 2. **Post-processes** the ADeleg output by applying filtering rules to identify findings of interest.
@@ -121,9 +121,11 @@ The tool begins with a **baseline set of broadly-scoped, well-known trustees**:
 | 2 | `Authenticated Users` |
 | 3 | `Everyone` |
 
-It then evaluates the current user's group memberships (from Step 1) against the Tier 0 resources list (see Step 3). The check filters the array of group names and returns only those that do **not** match any Tier 0 resource. If the filtered result is non-empty — meaning the user belongs to **at least one** non-Tier-0 group — then the **entire** original list of the user's groups is appended to the unsafe trustees list. This means that even Tier 0 group names the user belongs to will be included in the unsafe trustees list if the user also belongs to any non-Tier-0 group. Only if **every** group the user belongs to is a Tier 0 resource will the append be skipped entirely.
+It then evaluates the current user's group memberships (from Step 1) against the Tier 0 resources list (see Step 3). The check filters the array of group names and returns only those that do **not** match any Tier 0 resource. If the filtered result is non-empty — meaning the user belongs to **at least one** non-Tier-0 group — then the **entire** original list of the user's groups is appended to the unsafe trustees string. This means that even Tier 0 group names the user belongs to will be included in the unsafe trustees list if the user also belongs to any non-Tier-0 group. Only if **every** group the user belongs to is a Tier 0 resource will the append be skipped entirely.
 
-> **Note:** This all-or-nothing behavior is a known quirk of the current implementation (v0.1). A correct re-implementation may want to append only the non-Tier-0 groups individually, rather than appending all groups unconditionally.
+> **Note (all-or-nothing behavior):** This is a known quirk of the current implementation (v0.1). A correct re-implementation should append only the non-Tier-0 groups individually, rather than appending all groups unconditionally.
+
+> **Note (space-join behavior):** In the current implementation, the group array is concatenated to the unsafe trustees regex string using `"|" + $CurrentUserGroups`. Because `$CurrentUserGroups` is an array, PowerShell coerces it to a **space-separated string** (e.g., `|GroupA GroupB GroupC`) rather than inserting `|` between each group. This means that only the **first** group name becomes a proper regex alternative; subsequent group names are joined by spaces into a single token that is unlikely to match any trustee field value. A correct re-implementation should join the group names with `|` (e.g., `GroupA|GroupB|GroupC`) or append each group as a separate regex alternative.
 
 ### Step 3: Define Tier 0 (Critical) Resources
 
@@ -168,7 +170,7 @@ The tool uses a hardcoded list of delegation detail patterns considered insecure
 
 ### Step 5: Validate the ADeleg Dependency
 
-The tool checks whether the ADeleg executable exists at the resolved path (default: `.\ADeleg.exe` or the user-specified path). Validation is performed by testing for the file's existence.
+The tool checks whether the ADeleg executable exists at the resolved path. In the current implementation (v0.1), the `PathToADeleg` parameter is unconditionally overwritten with `.\ADeleg.exe` before this check (see the **PathToADeleg parameter override** limitation), so validation always targets the current working directory regardless of any user-specified path. Validation is performed by testing for the file's existence.
 
 - **If found:** Execution continues.
 - **If not found:** The tool displays a warning message instructing the user to download ADeleg from [https://github.com/mtth-bfft/adeleg/releases](https://github.com/mtth-bfft/adeleg/releases) and place it in the same folder, then **halts execution**. (In the current implementation, the halt is performed using a `break` statement outside of any loop or switch, which may cause a runtime error rather than a clean exit in some execution contexts. A correct re-implementation should exit gracefully.)
@@ -383,6 +385,7 @@ Upon launch, the tool displays an ASCII art banner featuring the tool name, auth
 | **No validation of ADeleg CSV schema** | The tool does not validate that the CSV produced by ADeleg contains the expected column headers. If ADeleg's output format changes, the tool may fail or produce incorrect results without a clear error message. |
 | **PathToADeleg parameter override** | In the current implementation (v0.1), the `PathToADeleg` parameter is accepted but then unconditionally overwritten with the default value (`.\ADeleg.exe`), effectively making the parameter non-functional. This is a known defect in the current version. |
 | **Group membership evaluation** | The current user's group names are checked against the Tier 0 resources pattern using an array filter. The filter returns only the non-matching (non-Tier-0) groups. If **at least one** non-Tier-0 group exists, the condition evaluates to true and the tool appends **all** of the user's groups (including any Tier 0 groups) to the unsafe trustees list. Only if **every** group the user belongs to is a Tier 0 resource will none be appended. A correct re-implementation should append only the non-Tier-0 groups individually. |
+| **Group array space-join** | When the current user's groups are appended to the unsafe trustees regex string, the array is concatenated using `"|" + $CurrentUserGroups`. Because `$CurrentUserGroups` is an array, PowerShell coerces it to a space-separated string (e.g., `|GroupA GroupB GroupC`). Only the first group becomes a valid regex alternative; the remaining groups are joined by spaces into a single token that will not match individual trustee values. A correct re-implementation should join group names with `|` (e.g., `GroupA|GroupB|GroupC`). |
 
 ### Assumptions
 
