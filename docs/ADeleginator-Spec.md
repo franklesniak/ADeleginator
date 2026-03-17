@@ -186,7 +186,7 @@ The tool executes the ADeleg binary with the `--csv` flag to produce a CSV deleg
   ADeleg.exe --server <server> --csv "ADelegReport_<ddMMyyyy>.csv"
   ```
 
-Where `<ddMMyyyy>` is the current date formatted as day-month-year with no separators (e.g., `15012025` for January 15, 2025).
+Where `<ddMMyyyy>` is the current date formatted as two-digit day, two-digit month, and four-digit year with no separators (e.g., `17032026` for 17 March 2026).
 
 Any errors during ADeleg execution are silently caught and suppressed.
 
@@ -305,7 +305,7 @@ matches any field value that **contains** any of the listed substrings. Because 
 | **Case sensitivity** | Matching is **case-insensitive**. |
 | **Match type** | **Substring/contains** — the pattern need only appear somewhere within the field value, not match the entire value. |
 | **Alternation** | Multiple patterns are combined with `\|` (pipe), meaning any one match is sufficient. |
-| **Special characters** | Patterns such as `add/delete delegations` contain the `/` character and `Domain Controllers (OU)` contains parentheses. These are used literally, though in a strict regex context parentheses would normally be metacharacters. The current behavior relies on the regex engine treating these as acceptable in practice. |
+| **Special characters** | Patterns such as `add/delete delegations` contain the `/` character and `Domain Controllers (OU)` contains parentheses. These are used literally in the current implementation, though in a strict regex context parentheses are metacharacters (denoting capture groups). The current behavior relies on the regex engine treating these as acceptable in practice. A correct re-implementation should either escape regex metacharacters in the pattern (e.g., `Domain Controllers \(OU\)`) or use literal/fixed-string matching for entries that contain special characters. |
 
 ### Insecure Trustee Delegation Rules
 
